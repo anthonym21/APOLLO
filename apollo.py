@@ -79,69 +79,69 @@ def gathermacos(database_names):
 	ignore_dir.append(os.getcwd())
 	print("...Searching for and copying databases into tmp_apollo...")
 	for root, dirs, filenames in os.walk(data_dir,followlinks=False):
-		if not any(ignored in root for ignored in ignore_dir):
+		if all(ignored not in root for ignored in ignore_dir):
 			for f in filenames:
 				for db in database_names:
 					if db == "db":
 						if re.search(rf'^{db}(-shm|-wal|$)',f):
-							if not os.path.exists(os.getcwd() + "/tmp_apollo" + root):
-								os.makedirs(os.getcwd() + "/tmp_apollo" + root)
-							shutil.copyfile(os.path.join(root,f),os.getcwd() + "/tmp_apollo" + root +"/"+f)
+							if not os.path.exists(f"{os.getcwd()}/tmp_apollo{root}"):
+								os.makedirs(f"{os.getcwd()}/tmp_apollo{root}")
+							shutil.copyfile(os.path.join(root,f), f"{os.getcwd()}/tmp_apollo{root}/{f}")
 					elif re.search(rf'^{db}(-shm|-wal|$)',f):
-						if not os.path.exists(os.getcwd() + "/tmp_apollo" + root):
-							os.makedirs(os.getcwd() + "/tmp_apollo" + root)
-						shutil.copyfile(os.path.join(root,f),os.getcwd() + "/tmp_apollo" + root +"/"+f)
+						if not os.path.exists(f"{os.getcwd()}/tmp_apollo{root}"):
+							os.makedirs(f"{os.getcwd()}/tmp_apollo{root}")
+						shutil.copyfile(os.path.join(root,f), f"{os.getcwd()}/tmp_apollo{root}/{f}")
 	chown_chmod()
 
 def gatherios(database_names):
 
 	tempdir()
-	tmpdir = os.getcwd() + "/tmp_apollo"
-	sshProcess = subprocess.Popen(['ssh', '-p', port, '-T', 'root@' + ip]
-		, stdin=subprocess.PIPE
-		, stdout=subprocess.PIPE
-		, encoding='utf8')
-	print("...Finding files on root@" + ip + ":" + port + " in " + data_dir)
-	findcmd = "find " + data_dir + " -type f"
-	out, err = sshProcess.communicate("find " + data_dir + " -type f")
+	tmpdir = f"{os.getcwd()}/tmp_apollo"
+	sshProcess = subprocess.Popen(
+		['ssh', '-p', port, '-T', f'root@{ip}'],
+		stdin=subprocess.PIPE,
+		stdout=subprocess.PIPE,
+		encoding='utf8',
+	)
+	print(f"...Finding files on root@{ip}:{port} in {data_dir}")
+	findcmd = f"find {data_dir} -type f"
+	out, err = sshProcess.communicate(f"find {data_dir} -type f")
 	print("...Writing ios_files.txt...")
-	with open(tmpdir +'/ios_files.txt', 'w') as file:
+	with open(f'{tmpdir}/ios_files.txt', 'w') as file:
 		file.write(out)
 
 	if ignore_dir:
-		with open(tmpdir +'/ios_files.txt', 'r') as file:
+		with open(f'{tmpdir}/ios_files.txt', 'r') as file:
 			lines = file.readlines()
-		with open(tmpdir +'/ios_files.txt', "w") as file:
+		with open(f'{tmpdir}/ios_files.txt', "w") as file:
 			for line in lines:
-				if not any(ignored in line.strip("\n") for ignored in ignore_dir):
+				if all(ignored not in line.strip("\n") for ignored in ignore_dir):
 					file.write(line)
 
 	print("...Searching for and copying databases into tmp_apollo...")
-	with open(tmpdir +'/ios_files.txt', 'r') as file:
+	with open(f'{tmpdir}/ios_files.txt', 'r') as file:
 		lines = file.readlines()
 		for line in lines:
 			for f in database_names:
 				splitline = line.rsplit("/",1)
 				if splitline[1].startswith(f):
-					if f == "db":
-						pass
-					else:
+					if f != "db":
 						line_escape = line.replace(" ", "\ ")
 						output = tmpdir + splitline[0]
 						if not os.path.exists(output):
 							os.makedirs(output)
-						server = 'root@'+ip+":"
-						subprocess.Popen(['scp','-P'+port,'-T',server+line_escape,output]).wait()
+						server = f'root@{ip}:'
+						subprocess.Popen(['scp', f'-P{port}', '-T', server+line_escape, output]).wait()
 	chown_chmod()
 
 def gatherfromzip(database_names):
 	
 	tempdir()
-	tmpdir = os.getcwd() + "/tmp_apollo"
+	tmpdir = f"{os.getcwd()}/tmp_apollo"
 
 	zip_file = ZipFile(data_dir)
 	name_list = zip_file.namelist()
-	
+
 	for pattern in database_names:
 		pattern = f'*{pattern}'
 		for member in name_list:
@@ -150,25 +150,25 @@ def gatherfromzip(database_names):
 					extracted_path = zip_file.extract(member, path=tmpdir)
 				except Exception as ex:
 					member = member.lstrip("/")
-					print(f'Could not write file to filesystem, path was {member} ' + str(ex))
-	
+					print(f'Could not write file to filesystem, path was {member} {str(ex)}')
+
 	print(f'...Data gathered from Zip location: {tmpdir}')
 	zip_file.close()
 	chown_chmod()
 	
 def gatherfromtar(database_names):
 	tempdir()
-	tmpdir = os.getcwd() + "/tmp_apollo"
-	
+	tmpdir = f"{os.getcwd()}/tmp_apollo"
+
 	is_gzip = data_dir.lower().endswith('gz')
 	mode ='r:gz' if is_gzip else 'r'
 	tar_file = tarfile.open(data_dir, mode)
-	
+
 	for pattern in database_names:
 		pattern = f'*{pattern}'
-		
+
 		for member in tar_file.getmembers():
-			if fnmatch.fnmatch('root/' + member.name, pattern):
+			if fnmatch.fnmatch(f'root/{member.name}', pattern):
 				try:
 					full_path = os.path.join(tmpdir, member.name)
 					if member.isdir():
@@ -182,34 +182,34 @@ def gatherfromtar(database_names):
 							fout.close()
 						os.utime(full_path, (member.mtime, member.mtime))
 				except Exception as ex:
-					print(f'Could not write file to filesystem, path was {member.name} ' + str(ex))
+					print(f'Could not write file to filesystem, path was {member.name} {str(ex)}')
 	print(f'...Data gathered from Tar location: {tmpdir}')
 	chown_chmod()
 	
 def tempdir():
-	tmpdir = os.getcwd() + "/tmp_apollo"
-	print("...Creating /tmp_apollo in: " + tmpdir)
+	tmpdir = f"{os.getcwd()}/tmp_apollo"
+	print(f"...Creating /tmp_apollo in: {tmpdir}")
 	if not os.path.exists(tmpdir):
 		os.makedirs(tmpdir)
 	os.chown(tmpdir,os.stat(os.getcwd()).st_uid,os.stat(os.getcwd()).st_gid)
 
 def chown_chmod():
 	print("...chmod/chown all the things...")
-	for root, dirs, filenames in os.walk(os.getcwd() + "/tmp_apollo"):
-			for d in dirs:
-				if os.access(os.path.join(root, d), os.R_OK) == False:
-					os.chmod(os.path.join(root, d), stat.S_IRWXU)
-				os.chown(os.path.join(root, d),os.stat(os.getcwd()).st_uid,os.stat(os.getcwd()).st_gid)
-			for f in filenames:
-				if os.access(os.path.join(root, f), os.R_OK) == False or os.access(os.path.join(root, f), os.W_OK) == False:
-					os.chmod(os.path.join(root, f), stat.S_IRWXU)
-				os.chown(os.path.join(root, f),os.stat(os.getcwd()).st_uid,os.stat(os.getcwd()).st_gid)
+	for root, dirs, filenames in os.walk(f"{os.getcwd()}/tmp_apollo"):
+		for d in dirs:
+			if os.access(os.path.join(root, d), os.R_OK) == False:
+				os.chmod(os.path.join(root, d), stat.S_IRWXU)
+			os.chown(os.path.join(root, d),os.stat(os.getcwd()).st_uid,os.stat(os.getcwd()).st_gid)
+		for f in filenames:
+			if os.access(os.path.join(root, f), os.R_OK) == False or os.access(os.path.join(root, f), os.W_OK) == False:
+				os.chmod(os.path.join(root, f), stat.S_IRWXU)
+			os.chown(os.path.join(root, f),os.stat(os.getcwd()).st_uid,os.stat(os.getcwd()).st_gid)
 
 def extractdata(mod_info,database_names):
 	print("\n==> Parsing", len(mod_info), "modules (Note: Some modules may be run on more than one database.)")
 	count = 1
 	modules = set()
-	
+
 	for item in sorted(mod_info):
 		dbs = item.split('#')
 		for mod in dbs:
@@ -232,12 +232,19 @@ def extractdata(mod_info,database_names):
 	for mod_def, mod_data in mod_info.items():
 		mod_def_split = mod_def.split('#')
 		if mod_data:
-			print(mod_def_split[0] + " on " + mod_def_split[1] + " for [" + mod_def_split[2] + "]:", len(mod_data)-5, "databases.")
+			print(
+				f"{mod_def_split[0]} on {mod_def_split[1]} for [{mod_def_split[2]}]:",
+				len(mod_data) - 5,
+				"databases.",
+			)
 			run_module(mod_def,mod_data[0],mod_data[5:],mod_data[2],mod_data[3],mod_data[4])
-			print()
 		else:
-			print(mod_def_split[0] + " on " + mod_def_split[1], ": Module not supported for version of data provided.")
-			print()	
+			print(
+				f"{mod_def_split[0]} on {mod_def_split[1]}",
+				": Module not supported for version of data provided.",
+			)	
+
+		print()	
 
 def run_module(mod_name,query_name,database_names,activity,key_timestamp,sql_query):
 
@@ -263,7 +270,7 @@ def run_module(mod_name,query_name,database_names,activity,key_timestamp,sql_que
 				cur.execute(sql)
 			except:
 				print("\tSQL Query not supported for this version of the database.")
-				
+
 			try:
 				rows = cur.fetchall()
 			except:
@@ -273,10 +280,7 @@ def run_module(mod_name,query_name,database_names,activity,key_timestamp,sql_que
 			print("\t\tNumber of Records: " + num_records)
 			records = records + len(rows)
 
-			headers = []
-			for x in cur.description:
-				headers.append(x[0])
-
+			headers = [x[0] for x in cur.description]
 			loc_records = 0
 
 			for row in rows:
@@ -284,15 +288,15 @@ def run_module(mod_name,query_name,database_names,activity,key_timestamp,sql_que
 				col_row = (OrderedDict(list(zip(headers,row))))
 
 				data_stuff = ""
-				for k,v in iter(col_row.items()):
-					data = "[" + str(k) + ": " + str(v) + "] "
+				for k, v in iter(col_row.items()):
+					data = f"[{str(k)}: {str(v)}] "
 
 					try:
 						data_stuff = data_stuff + data
 					except:
 						data_stuff = [x for x in data_stuff if x in string.printable]
-						data_stuff = data_stuff + data
-				
+						data_stuff += data
+
 				if output == 'csv':
 					key = col_row[key_timestamp]
 					if "\n" in data_stuff:
@@ -315,34 +319,34 @@ def run_module(mod_name,query_name,database_names,activity,key_timestamp,sql_que
 				if len(rows) > 0:
 					if args.k == True and "COORDINATES" in data_stuff:
 						coords_search = re.search(r'COORDINATES: [\d\.\,\ \-]*',data_stuff)
-						coords = coords_search.group(0).split(" ")
+						coords = coords_search[0].split(" ")
 
 						point = kml.newpoint(name=key)
-						point.description = ("Data: " + data_stuff)
+						point.description = f"Data: {data_stuff}"
 						point.timestamp.when = key
 						point.style = sharedstyle
 						point.coords = [(coords[2],coords[1])]
-						
+
 						loc_records = loc_records + 1
 						total_loc_records = total_loc_records + 1
 
 			if loc_records:
-				kmzfilename = query_name + ".kmz"
+				kmzfilename = f"{query_name}.kmz"
 				print("\t\tNumber of Location Records: " + str(loc_records))
 				print("\t\t===> Saving KMZ to " + kmzfilename + "...")
 				kml.savekmz(kmzfilename)
-		
+
 		except:
 			print("\t\tERROR: Problem with database. Could be unsupported.")
 
 def parse_module_definition(mod_info):
 
-	print("...Parsing Modules in..." + mod_dir)
+	print(f"...Parsing Modules in...{mod_dir}")
 	database_names = set()
 	for root, dirs, filenames in os.walk(mod_dir):
 		for f in filenames: 
 			if f.endswith(".txt"):
-				mod_def = os.path.join(root,f) 
+				mod_def = os.path.join(root,f)
 				fread = open(mod_def,'r')
 				contents = fread.read()
 
@@ -362,23 +366,20 @@ def parse_module_definition(mod_info):
 				for db in database_name:
 
 					if subparser == 'extract':
-						if version == 'yolo':
-							for section in parser.sections():
+						for section in parser.sections():
+							if version == 'yolo':
 								if "SQL Query" in section:
 									sql_query = parser.items(section,'QUERY')
 									for item in sql_query[0]:
 										if "SELECT" in item:
-											query = item
-											uniquekey = mod_def + "#" + db + "#" + section
-											mod_info[uniquekey] = [query_name, db, activity, key_timestamp, query]
-						else:			
-							for section in parser.sections():
-								if version in re.split('[ ,]', section):
-									sql_query = parser.items(section,'QUERY')
-									for item in sql_query[0]:
-										query = item
-										uniquekey = mod_def + "#" + db + "#" + section
-										mod_info[uniquekey] = [query_name, db, activity, key_timestamp, query]
+											uniquekey = f"{mod_def}#{db}#{section}"
+											mod_info[uniquekey] = [query_name, db, activity, key_timestamp, item]
+							elif version in re.split('[ ,]', section):
+								sql_query = parser.items(section,'QUERY')
+								for item in sql_query[0]:
+									query = item
+									uniquekey = f"{mod_def}#{db}#{section}"
+									mod_info[uniquekey] = [query_name, db, activity, key_timestamp, query]
 
 	if subparser == 'extract': 
 		extractdata(mod_info,database_names)
@@ -406,19 +407,19 @@ if __name__ == "__main__":
 	parser.add_argument('-v','--version'
 		, action='version'
 		, version='%(prog)s 1.4')
-	
+
 	subparsers = parser.add_subparsers(help='help for subcommand'
 		, dest='subparser')
 
 	gather_macos = subparsers.add_parser('gather_macos'
 		, help='Gather Files from MacOS System')
-	
+
 	gather_from_zip = subparsers.add_parser('gather_from_zip'
 		, help='Gather Files from Zip file')
-	
+
 	gather_from_tar = subparsers.add_parser('gather_from_tar'
 			, help='Gather Files from Tar file')
-	
+
 	gather_ios = subparsers.add_parser('gather_ios'
 		, help='Gather from Jailbroken iOS Device (IP/Port Required)')
 	gather_ios.add_argument('--ip'
@@ -450,7 +451,7 @@ if __name__ == "__main__":
 	extract.add_argument('-k'
 		, help="Additional KMZ Output for Location Data"
 		, action="store_true")
-	
+
 	parser.add_argument('modules_directory'
 		, help="Path to Modules Directory")
 	parser.add_argument('data_path'
@@ -467,48 +468,48 @@ if __name__ == "__main__":
 	total_loc_records = 0
 
 	print("\n--------------------------------------------------------------------------------------")
-	print("APOLLO Modules Version: " + apollo_version)
+	print(f"APOLLO Modules Version: {apollo_version}")
 	try: 
 		subparser = args.subparser
-		print("Action: " + subparser)
+		print(f"Action: {subparser}")
 	except:
 		pass
 	try: 
 		platform = args.p
-		print("Platform: " + platform)
+		print(f"Platform: {platform}")
 	except:
 		pass
 	try:
-		version = args.v 
-		print("Version: " + version)
+		version = args.v
+		print(f"Version: {version}")
 	except:
 		pass
 	try:
-		output = args.o 
-		print("Output: " + output)
+		output = args.o
+		print(f"Output: {output}")
 	except:
 		pass
 	try:
 		data_dir = args.data_path
-		print("Data Directory: " + data_dir)
+		print(f"Data Directory: {data_dir}")
 	except:
 		pass
 	try:
 		ignore_dir = args.ignore
 		for ignore in ignore_dir:
-			print("  Ignoring Directory: " + ignore)
+			print(f"  Ignoring Directory: {ignore}")
 	except:
 		pass
 	try:
 		mod_dir = args.modules_directory
-		print("Modules Directory: " + mod_dir)
+		print(f"Modules Directory: {mod_dir}")
 	except:
 		pass
 	try:
 		port = args.port
 		ip = args.ip
-		print('Jailbroken Device IP/Domain: ' + ip)
-		print('Jailbroken Device Port: ' + port)
+		print(f'Jailbroken Device IP/Domain: {ip}')
+		print(f'Jailbroken Device Port: {port}')
 	except:
 		pass
 	try:
@@ -516,14 +517,14 @@ if __name__ == "__main__":
 			print("KMZ: TRUE")
 	except:
 		pass
-	print("Current Working Directory: " + os.getcwd())
+	print(f"Current Working Directory: {os.getcwd()}")
 	print("--------------------------------------------------------------------------------------")
 
-	if ignore_dir == None:
+	if ignore_dir is None:
 		ignore_dir = []
-	
+
 	mod_info = {}
-	
+
 	try:
 		if output == 'csv':
 
@@ -536,11 +537,11 @@ if __name__ == "__main__":
 				print("\n===> Total number of records: " + str(records))
 
 				if args.k:
-					print("===> Total Number of Location Records: " + str(total_loc_records))
+					print(f"===> Total Number of Location Records: {total_loc_records}")
 
 				print("\n===> Lazily outputted to CSV file: apollo.csv\n")
 
-		elif output == 'sql' or output == 'sql_json':
+		elif output in ['sql', 'sql_json']:
 
 			if os.path.isfile("apollo.db"):
 				os.remove("apollo.db")
@@ -555,8 +556,8 @@ if __name__ == "__main__":
 			connw.commit()
 
 			if args.k:
-				print("===> Total Number of Location Records: " + str(total_loc_records))
-			
+				print(f"===> Total Number of Location Records: {total_loc_records}")
+
 			print("\n===> Lazily outputted to SQLite file: apollo.db\n")
 
 	except:
